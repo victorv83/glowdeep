@@ -548,7 +548,7 @@ function showMenu() {
     <ul class="how">
       <li><b>Tap water</b> to sprinkle plankton from your jar. It refills on its own.</li>
       <li>Fed jellies <b>glow</b> and shed motes. <b>Tap or swipe</b> motes before they reach the surface.</li>
-      <li>A jelly marked <b>!</b> is starving. Feed it or it goes dark for good.</li>
+      <li>A jelly turning <b style="color:#ffb14a">amber</b> is hungry. Flashing <b style="color:#ff5a4a">red</b> means it is starving and about to go dark for good.</li>
       <li><b>Tap raiders</b> repeatedly to drive them off, then grab the gem they leave.</li>
     </ul>`);
   resize();
@@ -606,13 +606,19 @@ function glow(c, x, y, r, hsl, a) {
   c.globalAlpha = ga; c.globalCompositeOperation = op;
 }
 
-function drawJelly(c, x, y, r, ph, hue, lit, alpha, stage, starve) {
+// hunger: 0 = content, ramps to 1 as the glow runs out. starve: seconds spent with no glow.
+// Hungry jellies turn amber; once starvation is well under way they pulse red.
+function drawJelly(c, x, y, r, ph, hue, lit, alpha, stage, starve, hunger = 0) {
+  const urgent = starve > STARVE_AT * 0.4;
+  const warn = urgent ? '2,100%,56%' : '38,100%,54%';
+  const warnA = hunger * (urgent ? 0.72 + 0.24 * Math.sin(ph * 4) : 0.78);
   const sq = Math.sin(ph), w = r * (1 + 0.1 * sq), h = r * (0.95 - 0.1 * sq);
   const sat = 25 + 65 * lit, li = 38 + 28 * lit;
   c.save(); c.globalAlpha = alpha;
   glow(c, x, y, r * 2.8, `${hue},95%,65%`, 0.45 * lit);
+  glow(c, x, y, r * 2.6, warn, 0.5 * warnA);
   // tentacles
-  c.strokeStyle = `hsla(${hue},${sat}%,${li + 8}%,0.7)`; c.lineWidth = Math.max(1.2, r * 0.09); c.lineCap = 'round';
+  c.strokeStyle = hunger > 0.5 ? `hsla(${warn},0.75)` : `hsla(${hue},${sat}%,${li + 8}%,0.7)`; c.lineWidth = Math.max(1.2, r * 0.09); c.lineCap = 'round';
   const n = stage === 2 ? 6 : stage === 1 ? 5 : 3;
   for (let i = 0; i < n; i++) {
     const bx = x + (i / (n - 1) - 0.5) * w * 1.4;
@@ -627,6 +633,7 @@ function drawJelly(c, x, y, r, ph, hue, lit, alpha, stage, starve) {
   c.bezierCurveTo(x - w, y - h * 1.15, x + w, y - h * 1.15, x + w, y + h * 0.25);
   const sc = 4; for (let i = 0; i < sc; i++) { const x1 = x + w - (i + 1) * (2 * w / sc); c.quadraticCurveTo(x1 + w / sc, y + h * 0.55, x1, y + h * 0.25); }
   c.fill();
+  if (warnA > 0) { c.fillStyle = `hsla(${warn},${warnA})`; c.fill(); } // same bell path, tinted
   if (stage === 2) { c.strokeStyle = `hsla(${hue + 40},100%,88%,${0.5 + 0.4 * lit})`; c.lineWidth = r * 0.07; c.beginPath(); c.arc(x, y - h * 0.15, w * 0.62, Math.PI * 1.12, Math.PI * 1.88); c.stroke(); }
   // highlight + face
   c.fillStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.ellipse(x - w * 0.4, y - h * 0.45, w * 0.18, h * 0.12, -0.5, 0, TAU); c.fill();
@@ -636,7 +643,7 @@ function drawJelly(c, x, y, r, ph, hue, lit, alpha, stage, starve) {
   if (lit > 0.3) c.arc(x, ey + r * 0.05, r * 0.14, 0.15 * Math.PI, 0.85 * Math.PI); else c.arc(x, ey + r * 0.22, r * 0.12, 1.15 * Math.PI, 1.85 * Math.PI);
   c.stroke();
   if (starve > 0) {
-    const urgent = starve > STARVE_AT * 0.55, b = 0.6 + 0.4 * Math.sin(ph * (urgent ? 4 : 2));
+    const b = 0.6 + 0.4 * Math.sin(ph * (urgent ? 4 : 2));
     c.globalAlpha = alpha * b; c.fillStyle = urgent ? '#ff5a4a' : '#ffb14a';
     c.font = `800 ${Math.max(13, r * 0.9)}px system-ui,sans-serif`; c.textAlign = 'center'; c.fillText('!', x, y - h * 1.25);
   }
@@ -845,7 +852,7 @@ function render() {
   }
   for (const c of G.creatures) {
     const a = c.dead ? clamp(1 - c.deadT / 2, 0, 1) : Math.min(1, c.born * 3);
-    if (c.kind === 'jelly') drawJelly(ctx, c.x, c.y, c.r, c.ph, c.hue, c.dead ? 0 : clamp(c.fed / 3, 0, 1), a, stageOf(c), c.dead ? 0 : c.starve);
+    if (c.kind === 'jelly') drawJelly(ctx, c.x, c.y, c.r, c.ph, c.hue, c.dead ? 0 : clamp(c.fed / 3, 0, 1), a, stageOf(c), c.dead ? 0 : c.starve, c.dead ? 0 : clamp(1 - c.fed / 5, 0, 1));
     else if (c.kind === 'lampfin') drawLampfin(ctx, c.x, c.y, c.r, c.face, c.ph, a, c.hungry);
     else if (c.kind === 'skimmer') drawSkimmer(ctx, c.x, c.y, c.r, c.face, c.ph, a);
     else drawPuff(ctx, c.x, c.y, c.r, c.face, c.ph, c.puffed, a);
